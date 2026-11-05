@@ -1,0 +1,245 @@
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from ..database import get_db
+from ..models import TestSession, Instrument, Observation, CalculationResult, RuleEvaluation, AuditLog, GeneratedReport
+from ..schemas.test_session import TestSessionCreate, TestSessionUpdate, TestSessionResponse
+from ..schemas.observation import ObservationSubmit, ObservationResponse
+from ..schemas.audit import AuditLogResponse
+from ..services.test_service import calculate_test_session, evaluate_test_session
+from ..services.report_service import generate_pdf_report
+from ..services.audit_service import record_audit_event
+
+router = APIRouter(prefix="/tests", tags=["Test Management"])
+
+
+@router.get("", response_model=List[TestSessionResponse])
+def list_test_sessions(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    instrument_id: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(TestSession)
+    if category:
+        query = query.filter(TestSession.test_category == category.lower().strip())
+    if status:
+        query = query.filter(TestSession.status == status)
+    if instrument_id:
+        query = query.filter(TestSession.instrument_id == instrument_id)
+    if search:
+        s = f"%{search.strip()}%"
+        query = query.join(TestSession.instrument).filter(
+            (TestSession.id.ilike(s)) |
+            (TestSession.operator_name.ilike(s)) |
+            (Instrument.serial_number.ilike(s)) |
+            (Instrument.model.ilike(s))
+        )
+
+    sessions = query.order_by(TestSession.created_at.desc()).all()
+    results = []
+    for s in sessions:
+        resp = TestSessionResponse.model_validate(s)
+        resp.has_observations = s.observations is not None and bool(s.observations.data)
+        resp.has_calculations = s.calculation_result is not None
+        resp.has_rule_evaluations = s.rule_evaluation is not None
+        resp.overall_outcome = s.rule_evaluation.overall_outcome if s.rule_evaluation else None
+        results.append(resp)
+    return results
+
+
+@router.post("", response_model=TestSessionResponse, status_code=201)
+def create_test_session(payload: TestSessionCreate, db: Session = Depends(get_db)):
+    instrument = db.query(Instrument).filter(Instrument.id == payload.instrument_id).first()
+    if not instrument:
+        raise HTTPException(status_code=404, detail="Selected instrument not found.")
+
+    valid_cats = ("eccentricity", "linearity", "repeatability")
+    cat = payload.test_category.lower().strip()
+    if cat not in valid_cats:
+        raise HTTPException(status_code=400, detail=f"Invalid test category '{payload.test_category}'. Must be one of: {valid_cats}")
+
+    session = TestSession(
+        instrument_id=instrument.id,
+        test_category=cat,
+        operator_name=payload.operator_name,
+        laboratory_location=payload.laboratory_location or instrument.location,
+        ambient_temperature=payload.ambient_temperature,
+        relative_humidity=payload.relative_humidity,
+        service_type=payload.service_type or "initial",
+        status="Draft",
+        test_configuration=payload.test_configuration or {},
+        is_demo=False,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    record_audit_event(
+        db=db,
+        action="TEST_SESSION_CREATED",
+        actor=session.operator_name,
+        test_session_id=session.id,
+        instrument_id=instrument.id,
+        details={
+            "category": cat,
+            "status": session.status,
+            "service_type": session.service_type,
+        }
+    )
+
+    resp = TestSessionResponse.model_validate(session)
+    resp.has_observations = False
+    resp.has_calculations = False
+    resp.has_rule_evaluations = False
+    return resp
+
+
+@router.get("/{test_id}")
+def get_test_session_details(test_id: str, db: Session = Depends(get_db)):
+    session = db.query(TestSession).filter(TestSession.id == test_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found.")
+
+    calc = session.calculation_result
+    rule_eval = session.rule_evaluation
+    obs = session.observations
+    report = db.query(GeneratedReport).filter(GeneratedReport.test_session_id == test_id).order_by(GeneratedReport.created_at.desc()).first()
+
+    return {
+        "session": TestSessionResponse.model_validate(session),
+        "observations": obs.data if obs else None,
+        "calculation_result": calc.full_data if calc else None,
+        "rule_evaluation": rule_eval.evaluations_data if rule_eval else None,
+        "latest_report": {
+            "id": report.id,
+            "file_name": report.file_name,
+            "created_at": report.created_at,
+        } if report else None,
+    }
+
+
+@router.put("/{test_id}", response_model=TestSessionResponse)
+def update_test_session(test_id: str, payload: TestSessionUpdate, db: Session = Depends(get_db)):
+    session = db.query(TestSession).filter(TestSession.id == test_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found.")
+
+    update_dict = payload.model_dump(exclude_unset=True)
+    for k, v in update_dict.items():
+        setattr(session, k, v)
+
+    db.commit()
+    db.refresh(session)
+
+    record_audit_event(
+        db=db,
+        action="TEST_SESSION_UPDATED",
+        actor=session.operator_name,
+        test_session_id=session.id,
+        instrument_id=session.instrument_id,
+        details=update_dict,
+    )
+
+    return TestSessionResponse.model_validate(session)
+
+
+@router.post("/{test_id}/observations", response_model=ObservationResponse)
+def save_observations(test_id: str, payload: ObservationSubmit, db: Session = Depends(get_db)):
+    session = db.query(TestSession).filter(TestSession.id == test_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found.")
+
+    if not payload.observations:
+        raise HTTPException(status_code=400, detail="Observations array cannot be empty.")
+
+    if payload.test_configuration:
+        current_cfg = session.test_configuration or {}
+        current_cfg.update(payload.test_configuration)
+        session.test_configuration = current_cfg
+
+    obs = db.query(Observation).filter(Observation.test_session_id == test_id).first()
+    if not obs:
+        obs = Observation(
+            test_session_id=test_id,
+            data=payload.observations,
+        )
+        db.add(obs)
+    else:
+        obs.data = payload.observations
+
+    session.status = "In Progress"
+    db.commit()
+    db.refresh(obs)
+
+    record_audit_event(
+        db=db,
+        action="OBSERVATIONS_SAVED",
+        actor=session.operator_name,
+        test_session_id=session.id,
+        instrument_id=session.instrument_id,
+        details={
+            "count": len(payload.observations),
+            "category": session.test_category,
+        }
+    )
+
+    return obs
+
+
+@router.post("/{test_id}/calculate")
+def run_calculations(test_id: str, db: Session = Depends(get_db)):
+    return calculate_test_session(db=db, test_session_id=test_id)
+
+
+@router.post("/{test_id}/validate")
+def validate_rules(test_id: str, db: Session = Depends(get_db)):
+    return evaluate_test_session(db=db, test_session_id=test_id)
+
+
+@router.get("/{test_id}/results")
+def get_test_results(test_id: str, db: Session = Depends(get_db)):
+    session = db.query(TestSession).filter(TestSession.id == test_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found.")
+
+    calc = session.calculation_result
+    rule_eval = session.rule_evaluation
+
+    if not calc or not rule_eval:
+        raise HTTPException(
+            status_code=400,
+            detail="Results not available. Observations must be saved and calculated first."
+        )
+
+    return {
+        "test_session_id": session.id,
+        "instrument": session.instrument,
+        "test_category": session.test_category,
+        "status": session.status,
+        "calculation_result": calc.full_data,
+        "rule_evaluation": rule_eval.evaluations_data,
+    }
+
+
+@router.post("/{test_id}/report")
+def generate_report(test_id: str, db: Session = Depends(get_db)):
+    session = db.query(TestSession).filter(TestSession.id == test_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found.")
+
+    report = generate_pdf_report(db, test_id, operator_name=session.operator_name)
+    return {
+        "status": "success",
+        "message": "Report generated successfully.",
+        "report_id": report.id,
+        "file_name": report.file_name,
+        "created_at": report.created_at,
+    }
+
+
+@router.get("/{test_id}/audit", response_model=List[AuditLogResponse])
+def get_test_audit_logs(test_id: str, db: Session = Depends(get_db)):
+    return db.query(AuditLog).filter(AuditLog.test_session_id == test_id).order_by(AuditLog.timestamp.desc()).all()
+

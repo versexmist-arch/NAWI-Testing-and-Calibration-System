@@ -1,0 +1,67 @@
+{
+  "version": "OIML-R76-2006-v1.0",
+  "name": "OIML R-76-1:2006 Metrological Requirements",
+  "description": "Standardized Maximum Permissible Error (MPE) thresholds, eccentricity tolerances, and repeatability limits per OIML R-76-1:2006.",
+  "published_date": "2006-10-15",
+  "rules": [
+    {
+      "rule_id": "OIML-R76-1-LIN-MPE",
+      "name": "Maximum Permissible Error for Indication (Linearity)",
+      "test_category": "linearity",
+      "source_reference": "OIML R-76-1:2006 Clause 3.5.1, Table 6",
+      "version": "OIML-R76-2006-v1.0",
+      "verification_status": "VERIFIED",
+      "description": "Evaluates whether indication error at each applied reference test load does not exceed the applicable MPE in units of verification scale intervals e.",
+      "mpe_table": {
+        "Class I": [
+          {"min_e": 0, "max_e": 50000, "mpe_multiplier": 0.5},
+          {"min_e": 50000, "max_e": 200000, "mpe_multiplier": 1.0},
+          {"min_e": 200000, "max_e": null, "mpe_multiplier": 1.5}
+        ],
+        "Class II": [
+          {"min_e": 0, "max_e": 5000, "mpe_multiplier": 0.5},
+          {"min_e": 5000, "max_e": 20000, "mpe_multiplier": 1.0},
+          {"min_e": 20000, "max_e": 100000, "mpe_multiplier": 1.5}
+        ],
+        "Class III": [
+          {"min_e": 0, "max_e": 500, "mpe_multiplier": 0.5},
+          {"min_e": 500, "max_e": 2000, "mpe_multiplier": 1.0},
+          {"min_e": 2000, "max_e": 10000, "mpe_multiplier": 1.5}
+        ],
+        "Class IIII": [
+          {"min_e": 0, "max_e": 50, "mpe_multiplier": 0.5},
+          {"min_e": 50, "max_e": 200, "mpe_multiplier": 1.0},
+          {"min_e": 200, "max_e": 1000, "mpe_multiplier": 1.5}
+        ]
+      }
+    },
+    {
+      "rule_id": "OIML-R76-1-ECC-3.6.2",
+      "name": "Eccentricity Indication Error Limit",
+      "test_category": "eccentricity",
+      "source_reference": "OIML R-76-1:2006 Clause 3.6.2",
+      "version": "OIML-R76-2006-v1.0",
+      "verification_status": "VERIFIED",
+      "description": "The errors of indication at each eccentric position shall not exceed the maximum permissible error for the applied test load."
+    },
+    {
+      "rule_id": "OIML-R76-1-REP-3.6.1",
+      "name": "Repeatability Span Limit (Max - Min)",
+      "test_category": "repeatability",
+      "source_reference": "OIML R-76-1:2006 Clause 3.6.1",
+      "version": "OIML-R76-2006-v1.0",
+      "verification_status": "VERIFIED",
+      "description": "The difference between maximum and minimum results obtained in repeated weighings of the same load shall not exceed the absolute value of the MPE for that load."
+    },
+    {
+      "rule_id": "OIML-R76-EXPERIMENTAL-DRAFT-2026",
+      "name": "Experimental High-Precision Sensor Drift Threshold",
+      "test_category": "repeatability",
+      "source_reference": "Draft Proposal SIH26035 Working Group Note 4",
+      "version": "2026-DRAFT-v0.1",
+      "verification_status": "PENDING_VERIFICATION",
+      "description": "Hypothetical additional restriction on standard deviation to mean ratio under thermal drift conditions. Marked strictly as pending verification until metrological authority approves."
+    }
+  ]
+}
+
