@@ -15,6 +15,9 @@ def list_instruments(
     search: Optional[str] = None,
     accuracy_class: Optional[str] = None,
     include_archived: bool = False,
+    is_demo: Optional[bool] = None,
+    sort_by: Optional[str] = "created_at",
+    sort_order: Optional[str] = "desc",
     db: Session = Depends(get_db),
 ):
     query = db.query(Instrument)
@@ -22,6 +25,8 @@ def list_instruments(
         query = query.filter(Instrument.is_archived == False)
     if accuracy_class:
         query = query.filter(Instrument.accuracy_class == accuracy_class)
+    if is_demo is not None:
+        query = query.filter(Instrument.is_demo == is_demo)
     if search:
         s = f"%{search.strip()}%"
         query = query.filter(
@@ -30,7 +35,15 @@ def list_instruments(
             (Instrument.manufacturer.ilike(s)) |
             (Instrument.location.ilike(s))
         )
-    return query.order_by(Instrument.created_at.desc()).all()
+
+    # Sorting
+    sort_col = getattr(Instrument, sort_by, Instrument.created_at)
+    if sort_order.lower() == "asc":
+        query = query.order_by(sort_col.asc())
+    else:
+        query = query.order_by(sort_col.desc())
+
+    return query.all()
 
 
 @router.post("", response_model=InstrumentResponse, status_code=201)

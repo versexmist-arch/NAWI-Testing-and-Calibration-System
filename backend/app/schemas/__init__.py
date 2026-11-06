@@ -3,6 +3,8 @@ from .test_session import TestSessionCreate, TestSessionUpdate, TestSessionRespo
 from .observation import ObservationSubmit, ObservationResponse
 from .report import GeneratedReportResponse
 from .audit import AuditLogResponse
+from .user import UserCreate, UserUpdate, UserResponse
+from .lab_settings import LaboratorySettingsUpdate, LaboratorySettingsResponse
 
 __all__ = [
     "InstrumentCreate",
@@ -15,5 +17,10 @@ __all__ = [
     "ObservationResponse",
     "GeneratedReportResponse",
     "AuditLogResponse",
+    "UserCreate",
+    "UserUpdate",
+    "UserResponse",
+    "LaboratorySettingsUpdate",
+    "LaboratorySettingsResponse",
 ]
 

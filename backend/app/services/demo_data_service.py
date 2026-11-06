@@ -9,6 +9,8 @@ from ..models import (
     RuleEvaluation,
     GeneratedReport,
     AuditLog,
+    User,
+    LaboratorySettings,
 )
 from .test_service import calculate_test_session
 from .report_service import generate_pdf_report
@@ -16,6 +18,57 @@ from .report_service import generate_pdf_report
 
 def seed_demo_data(db: Session) -> Dict[str, Any]:
     """Seed comprehensive demonstration instruments and test workflows."""
+    # Ensure Laboratory Settings exist
+    lab_exists = db.query(LaboratorySettings).first()
+    if not lab_exists:
+        default_lab = LaboratorySettings(id=1)
+        db.add(default_lab)
+        db.commit()
+
+    # Ensure default users/operators exist
+    users_count = db.query(User).count()
+    if users_count == 0:
+        default_users = [
+            User(
+                username="dr.jenkins",
+                full_name="Dr. Sarah Jenkins",
+                email="sarah.jenkins@visionverity-lims.gov.in",
+                role="Laboratory Manager",
+                qualification="Senior Metrologist, Ph.D. Metrology & Measurement Standards",
+                department="Calibration Standards Division",
+                is_demo=True,
+            ),
+            User(
+                username="m.vance",
+                full_name="Marcus Vance",
+                email="marcus.vance@visionverity-lims.gov.in",
+                role="Metrologist/Operator",
+                qualification="Metrology Specialist, ISO/IEC 17025 Certified",
+                department="Mass & Gravimetric Calibration Bay",
+                is_demo=True,
+            ),
+            User(
+                username="e.rostova",
+                full_name="Elena Rostova",
+                email="elena.rostova@visionverity-lims.gov.in",
+                role="Reviewer",
+                qualification="Lead Quality Auditor, ISO/IEC 17025 & OIML Compliance",
+                department="Quality Assurance & Verification",
+                is_demo=True,
+            ),
+            User(
+                username="admin",
+                full_name="Chief Metrology Administrator",
+                email="admin@visionverity-lims.gov.in",
+                role="Administrator",
+                qualification="LIMS Systems & Compliance Director",
+                department="Laboratory Administration",
+                is_demo=True,
+            ),
+        ]
+        db.add_all(default_users)
+        db.commit()
+
     # Check if demo instruments already exist
     existing = db.query(Instrument).filter(Instrument.is_demo == True).first()
     if existing:

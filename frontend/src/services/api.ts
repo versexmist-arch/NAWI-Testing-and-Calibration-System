@@ -1,7 +1,8 @@
 import axios from 'axios';
 import type {
   Instrument, TestSession, GeneratedReport, AuditLog,
-  DashboardStats, CalculationResult, RuleEvaluationSummary
+  DashboardStats, CalculationResult, RuleEvaluationSummary,
+  User, LaboratorySettings, AnalyticsData
 } from '../types';
 
 const api = axios.create({
@@ -22,6 +23,9 @@ export const listInstruments = (params?: {
   search?: string;
   accuracy_class?: string;
   include_archived?: boolean;
+  is_demo?: boolean;
+  sort_by?: string;
+  sort_order?: string;
 }): Promise<Instrument[]> =>
   api.get<Instrument[]>('/instruments', { params }).then(r => r.data);
 
@@ -112,5 +116,31 @@ export const resetDemoData = () =>
 export const seedDemoData = () =>
   api.post('/demo/seed').then(r => r.data);
 
-export default api;
+// --- Users & Operators ---
+export const listUsers = (params?: { role?: string; search?: string }): Promise<User[]> =>
+  api.get<User[]>('/users', { params }).then(r => r.data);
 
+export const getUser = (id: string): Promise<User> =>
+  api.get<User>(`/users/${id}`).then(r => r.data);
+
+export const createUser = (data: Partial<User>): Promise<User> =>
+  api.post<User>('/users', data).then(r => r.data);
+
+export const updateUser = (id: string, data: Partial<User>): Promise<User> =>
+  api.put<User>(`/users/${id}`, data).then(r => r.data);
+
+export const deleteUser = (id: string) =>
+  api.delete(`/users/${id}`).then(r => r.data);
+
+// --- Laboratory Settings ---
+export const getLabSettings = (): Promise<LaboratorySettings> =>
+  api.get<LaboratorySettings>('/lab-settings').then(r => r.data);
+
+export const updateLabSettings = (data: Partial<LaboratorySettings>): Promise<LaboratorySettings> =>
+  api.put<LaboratorySettings>('/lab-settings', data).then(r => r.data);
+
+// --- Analytics ---
+export const getAnalytics = (params?: { start_date?: string; end_date?: string }): Promise<AnalyticsData> =>
+  api.get<AnalyticsData>('/analytics', { params }).then(r => r.data);
+
+export default api;

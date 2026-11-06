@@ -163,3 +163,4 @@ This application is a testing, calculation, and calibration support prototype cr
 - It provides structured observation capture, deterministic calculation, and rule evaluation against configured OIML R-76 recommendations.
 - Any rule designated as `PENDING_VERIFICATION` does not issue an authoritative compliance conclusion.
 - **This application does not issue legally binding certificates of verification or replace accredited legal metrology inspection.**
+

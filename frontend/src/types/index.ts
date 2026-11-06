@@ -1,4 +1,4 @@
-// Shared TypeScript types for NAWI Testing System
+// Shared TypeScript types for NAWI Testing & Calibration LIMS Platform
 
 export interface Instrument {
   id: string;
@@ -19,6 +19,40 @@ export interface Instrument {
   is_demo: boolean;
   is_archived: boolean;
   created_at: string;
+  updated_at: string;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  full_name: string;
+  email: string;
+  role: 'Administrator' | 'Laboratory Manager' | 'Metrologist/Operator' | 'Reviewer';
+  qualification?: string;
+  department?: string;
+  is_active: boolean;
+  is_demo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LaboratorySettings {
+  id: number;
+  lab_name: string;
+  organization: string;
+  accreditation_number: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  postal_code?: string;
+  country?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  default_temperature: number;
+  default_humidity: number;
+  default_mass_unit: string;
+  report_header_title: string;
+  report_disclaimer: string;
   updated_at: string;
 }
 
@@ -185,40 +219,94 @@ export interface AuditLog {
 
 export interface DashboardMetrics {
   total_instruments: number;
+  active_instruments: number;
   total_tests: number;
   completed_tests: number;
   pending_tests: number;
   pass_count: number;
   fail_count: number;
   pending_eval_count: number;
+  reports_generated: number;
+  demo_instruments: number;
+  user_instruments: number;
+  test_artifact_instruments: number;
+  genuine_user_instruments: number;
+  demo_tests: number;
+  user_tests: number;
+  test_artifact_tests: number;
+  genuine_user_tests: number;
+}
+
+export interface RecentInstrumentItem {
+  id: string;
+  serial_number: string;
+  manufacturer: string;
+  model: string;
+  accuracy_class: string;
+  max_capacity: number;
+  unit: string;
+  is_demo: boolean;
+  created_at: string;
+}
+
+export interface RecentTestItem {
+  id: string;
+  instrument_serial: string;
+  instrument_model: string;
+  category: string;
+  operator: string;
+  status: string;
+  outcome?: string;
+  test_date: string;
+  is_demo: boolean;
+}
+
+export interface RecentReportItem {
+  id: string;
+  file_name: string;
+  test_session_id: string;
+  instrument_serial: string;
+  generated_by: string;
+  created_at: string;
+}
+
+export interface RecentAuditItem {
+  id: string;
+  action: string;
+  actor: string;
+  test_session_id?: string;
+  instrument_id?: string;
+  timestamp: string;
 }
 
 export interface DashboardStats {
   metrics: DashboardMetrics;
   category_distribution: Array<{ name: string; value: number; color: string }>;
   compliance_distribution: Array<{ name: string; value: number; color: string }>;
-  recent_tests: Array<{
-    id: string;
-    instrument_serial: string;
-    instrument_model: string;
-    category: string;
-    operator: string;
-    status: string;
-    outcome?: string;
-    test_date: string;
-    is_demo: boolean;
-  }>;
-  recent_reports: Array<{
-    id: string;
-    file_name: string;
-    test_session_id: string;
-    instrument_serial: string;
-    generated_by: string;
-    created_at: string;
-  }>;
+  accuracy_class_distribution: Array<{ class_name: string; count: number }>;
+  recent_instruments: RecentInstrumentItem[];
+  recent_tests: RecentTestItem[];
+  recent_reports: RecentReportItem[];
+  recent_audit_events: RecentAuditItem[];
+}
+
+export interface AnalyticsData {
+  summary: {
+    total_tests: number;
+    completed_tests: number;
+    passed_tests: number;
+    failed_tests: number;
+    pending_tests: number;
+    pass_rate_percentage: number;
+    total_reports_generated: number;
+  };
+  monthly_trend: Array<{ month: string; tests: number; passed: number; failed: number }>;
+  category_distribution: Array<{ name: string; value: number; color: string }>;
+  compliance_distribution: Array<{ name: string; value: number; color: string }>;
+  accuracy_class_distribution: Array<{ class_name: string; count: number }>;
+  operator_distribution: Array<{ operator: string; tests_count: number }>;
 }
 
 export type TestCategory = 'eccentricity' | 'linearity' | 'repeatability';
 export type SessionStatus = 'Draft' | 'In Progress' | 'Calculated' | 'Completed' | 'Incomplete';
 export type Outcome = 'PASS' | 'FAIL' | 'INCOMPLETE' | 'NOT_APPLICABLE' | 'PENDING_VERIFICATION';
-

@@ -49,4 +49,6 @@ Thumbs.db
 .vscode/
 .idea/
 .env
+#local backups
+backups/
 

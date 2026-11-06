@@ -11,27 +11,27 @@
       "source_reference": "OIML R-76-1:2006 Clause 3.5.1, Table 6",
       "version": "OIML-R76-2006-v1.0",
       "verification_status": "VERIFIED",
-      "description": "Evaluates whether indication error at each applied reference test load does not exceed the applicable MPE in units of verification scale intervals e.",
+      "description": "Evaluates whether indication error at each applied reference test load does not exceed the applicable MPE in units of verification scale intervals e. The last bracket of each class is open-ended (max_e: null) to handle any load within the instrument's rated capacity. Per the standard, instruments must not be loaded beyond their rated maximum capacity, so the bracket is effectively bounded by Max/e = n_max.",
       "mpe_table": {
         "Class I": [
-          {"min_e": 0, "max_e": 50000, "mpe_multiplier": 0.5},
-          {"min_e": 50000, "max_e": 200000, "mpe_multiplier": 1.0},
-          {"min_e": 200000, "max_e": null, "mpe_multiplier": 1.5}
+          {"min_e": 0, "max_e": 50000,  "mpe_multiplier": 0.5},
+          {"min_e": 50000,  "max_e": 200000, "mpe_multiplier": 1.0},
+          {"min_e": 200000, "max_e": null,   "mpe_multiplier": 1.5}
         ],
         "Class II": [
-          {"min_e": 0, "max_e": 5000, "mpe_multiplier": 0.5},
-          {"min_e": 5000, "max_e": 20000, "mpe_multiplier": 1.0},
-          {"min_e": 20000, "max_e": 100000, "mpe_multiplier": 1.5}
+          {"min_e": 0, "max_e": 5000,  "mpe_multiplier": 0.5},
+          {"min_e": 5000,  "max_e": 20000,  "mpe_multiplier": 1.0},
+          {"min_e": 20000,  "max_e": null,   "mpe_multiplier": 1.5}
         ],
         "Class III": [
-          {"min_e": 0, "max_e": 500, "mpe_multiplier": 0.5},
-          {"min_e": 500, "max_e": 2000, "mpe_multiplier": 1.0},
-          {"min_e": 2000, "max_e": 10000, "mpe_multiplier": 1.5}
+          {"min_e": 0, "max_e": 500,   "mpe_multiplier": 0.5},
+          {"min_e": 500,   "max_e": 2000,   "mpe_multiplier": 1.0},
+          {"min_e": 2000,   "max_e": null,   "mpe_multiplier": 1.5}
         ],
         "Class IIII": [
-          {"min_e": 0, "max_e": 50, "mpe_multiplier": 0.5},
-          {"min_e": 50, "max_e": 200, "mpe_multiplier": 1.0},
-          {"min_e": 200, "max_e": 1000, "mpe_multiplier": 1.5}
+          {"min_e": 0, "max_e": 50,    "mpe_multiplier": 0.5},
+          {"min_e": 50,    "max_e": 200,    "mpe_multiplier": 1.0},
+          {"min_e": 200,    "max_e": null,   "mpe_multiplier": 1.5}
         ]
       }
     },
@@ -64,4 +64,3 @@
     }
   ]
 }
-

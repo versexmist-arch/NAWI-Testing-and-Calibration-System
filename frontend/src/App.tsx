@@ -10,9 +10,11 @@ import InstrumentDetail from './pages/InstrumentDetail';
 import TestManagement from './pages/TestManagement';
 import TestDetail from './pages/TestDetail';
 import { EccentricityTest, LinearityTest, RepeatabilityTest } from './pages/TestWorkflows';
-import ResultsAnalytics from './pages/ResultsAnalytics';
+import TestHistory from './pages/TestHistory';
+import AnalyticsPage from './pages/AnalyticsPage';
 import Reports from './pages/Reports';
 import AuditHistory from './pages/AuditHistory';
+import UsersManagement from './pages/UsersManagement';
 import Settings from './pages/Settings';
 
 const App: React.FC = () => {
@@ -29,17 +31,22 @@ const App: React.FC = () => {
             <Route path="/instruments/:id" element={<InstrumentDetail />} />
             <Route path="/instruments/:id/edit" element={<RegisterInstrument />} />
 
-            {/* Tests */}
+            {/* Tests & Workflows */}
             <Route path="/tests" element={<TestManagement />} />
             <Route path="/tests/:id" element={<TestDetail />} />
             <Route path="/tests/eccentricity" element={<EccentricityTest />} />
             <Route path="/tests/linearity" element={<LinearityTest />} />
             <Route path="/tests/repeatability" element={<RepeatabilityTest />} />
+            <Route path="/history" element={<TestHistory />} />
 
-            {/* Results, Reports, Audit, Settings */}
-            <Route path="/results" element={<ResultsAnalytics />} />
+            {/* Quality & Reporting */}
             <Route path="/reports" element={<Reports />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/results" element={<Navigate to="/analytics" replace />} />
             <Route path="/audit" element={<AuditHistory />} />
+
+            {/* Administration */}
+            <Route path="/users" element={<UsersManagement />} />
             <Route path="/settings" element={<Settings />} />
 
             {/* Fallback */}
@@ -52,4 +59,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

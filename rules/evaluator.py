@@ -48,10 +48,19 @@ def get_mpe_for_load(
 ) -> Tuple[float, float, str]:
     """
     Calculate Maximum Permissible Error (MPE) for a given load and instrument class.
+
     Returns: (mpe_in_e, mpe_in_mass_units, step_description)
+
+    Raises:
+        ValueError: If 'e' is not positive, if load is negative, or if no OIML
+                    Table 6 bracket covers the given load/e ratio. A no-match
+                    condition means the instrument is operating outside the ranges
+                    defined in the standard for its declared accuracy class.
     """
     if e <= 0:
         raise ValueError("Verification scale interval 'e' must be strictly positive to determine MPE.")
+    if load < 0:
+        raise ValueError(f"Load must be non-negative; received {load}.")
 
     config = rules_config or load_rules_config()
     lin_rule = next((r for r in config.get("rules", []) if r.get("rule_id") == "OIML-R76-1-LIN-MPE"), None)
@@ -61,12 +70,14 @@ def get_mpe_for_load(
     cls_norm = normalize_class_name(accuracy_class)
     table = lin_rule["mpe_table"].get(cls_norm)
     if not table:
-        # Fallback to Class III
+        # Fallback to Class III when an unrecognised class string is supplied
         table = lin_rule["mpe_table"]["Class III"]
         cls_norm = "Class III"
 
     m_in_e = load / e
-    multiplier = 1.0
+
+    # Sentinel: None means no bracket was matched yet
+    multiplier: Optional[float] = None
     bracket_desc = ""
 
     for step in table:
@@ -75,6 +86,7 @@ def get_mpe_for_load(
         mult = step["mpe_multiplier"]
 
         if max_e is None:
+            # Open-ended upper bracket: matches all m > min_e
             if m_in_e > min_e:
                 multiplier = mult
                 bracket_desc = f"m > {min_e}e"
@@ -84,6 +96,18 @@ def get_mpe_for_load(
                 multiplier = mult
                 bracket_desc = f"{min_e}e ≤ m ≤ {max_e}e"
                 break
+
+    # --- BUG-1 FIX ---
+    # If no bracket matched, the load/e ratio falls outside every defined step.
+    # With open-ended last brackets (max_e=null) this should only occur when
+    # load=0 is below the first bracket's min_e, which cannot happen since all
+    # tables start at min_e=0. The guard is kept as a strict safety net.
+    if multiplier is None:
+        raise ValueError(
+            f"Load {load} (m/e = {m_in_e:.2f}e) falls outside all OIML R-76-1:2006 Table 6 "
+            f"MPE brackets for {cls_norm}. Verify that the test load does not exceed the "
+            f"instrument's rated maximum capacity."
+        )
 
     # If in-service, MPE is doubled per OIML R-76-1 Clause 3.5.2
     if service_type.lower() == "service":
@@ -254,6 +278,21 @@ class OIMLRuleEvaluator:
         unit: str,
         service_type: str
     ) -> List[RuleItemEvaluation]:
+        """
+        Evaluate linearity test results against OIML R-76-1:2006 requirements.
+
+        Two criteria are applied when data are available:
+
+        1. Per-point indication error criterion (Clause 3.5.1, Table 6):
+           |Ec(L)| ≤ MPE(L)  for every load point in both directions.
+
+        2. Hysteresis criterion (Clause 3.5.1 paragraph 2):
+           |I_inc(L) − I_dec(L)| ≤ |MPE(L)|  for every load common to both
+           increasing and decreasing sequences.
+           This criterion is evaluated only when the calculator produced
+           hysteresis_results (i.e., both directions were observed at the same load).
+           If only one direction was measured the criterion is not applicable.
+        """
         rule_def = next(
             (r for r in self.config.get("rules", []) if r.get("rule_id") == "OIML-R76-1-LIN-MPE"),
             None
@@ -294,6 +333,9 @@ class OIMLRuleEvaluator:
                 )
             ]
 
+        evaluations: List[RuleItemEvaluation] = []
+
+        # ── Criterion 1: per-point indication error ──────────────────────────
         sub_details = []
         all_passed = True
         failed_count = 0
@@ -302,7 +344,27 @@ class OIMLRuleEvaluator:
         for pt in point_results:
             load = pt.get("load", 0.0)
             corr_err = abs(pt.get("corrected_error", 0.0))
-            mult, mpe_mass, desc = get_mpe_for_load(load, e_val, acc_class, self.config, service_type)
+
+            try:
+                mult, mpe_mass, desc = get_mpe_for_load(load, e_val, acc_class, self.config, service_type)
+            except ValueError as exc:
+                # Load is outside all defined Table 6 brackets — treat as INCOMPLETE
+                evaluations.append(
+                    RuleItemEvaluation(
+                        rule_id=rule_def["rule_id"],
+                        rule_name=rule_def["name"],
+                        source_reference=rule_def["source_reference"],
+                        rule_version=self.rule_version,
+                        verification_status=RuleVerificationStatus.VERIFIED,
+                        outcome=EvaluationOutcome.INCOMPLETE,
+                        applicable_criterion="|E_c| ≤ MPE(L)",
+                        observed_value=f"Load = {load} {unit}",
+                        tolerance_limit="No applicable bracket",
+                        explanation=f"MPE lookup failed: {exc}",
+                    )
+                )
+                return evaluations
+
             pt_passed = corr_err <= (mpe_mass + 1e-9)
             if not pt_passed:
                 all_passed = False
@@ -322,28 +384,95 @@ class OIMLRuleEvaluator:
                 "criterion": desc,
             })
 
-        outcome = EvaluationOutcome.PASS if all_passed else EvaluationOutcome.FAIL
-        expl = (
+        outcome_1 = EvaluationOutcome.PASS if all_passed else EvaluationOutcome.FAIL
+        expl_1 = (
             f"All {len(point_results)} test points are within their applicable OIML Table 6 MPE limits."
             if all_passed
             else f"{failed_count} of {len(point_results)} load points exceeded the applicable MPE limit."
         )
 
-        return [
+        evaluations.append(
             RuleItemEvaluation(
                 rule_id=rule_def["rule_id"],
                 rule_name=rule_def["name"],
                 source_reference=rule_def["source_reference"],
                 rule_version=self.rule_version,
                 verification_status=RuleVerificationStatus.VERIFIED,
-                outcome=outcome,
-                applicable_criterion=f"Table 6 step boundaries ({acc_class})",
+                outcome=outcome_1,
+                applicable_criterion=f"Table 6 step boundaries ({acc_class}): |Ec| ≤ MPE(L)",
                 observed_value=f"Max error = {calc_result.get('max_absolute_error', 0.0):.4f} {unit} ({worst_ratio * 100:.1f}% of MPE)",
-                tolerance_limit=f"Dynamic MPE (0.5e to 1.5e depending on load)",
-                explanation=expl,
+                tolerance_limit=f"Dynamic MPE (0.5e to 1.5e depending on load bracket)",
+                explanation=expl_1,
                 details=sub_details,
             )
-        ]
+        )
+
+        # ── Criterion 2: hysteresis (Clause 3.5.1 ¶2) ───────────────────────
+        # Only evaluated when both increasing and decreasing sequences share load
+        # points — i.e., when the calculator produced hysteresis_results entries.
+        hysteresis_results = calc_result.get("hysteresis_results", [])
+        if hysteresis_results:
+            hys_sub = []
+            hys_all_passed = True
+            hys_failed = 0
+            max_hys_ratio = 0.0
+
+            for hpt in hysteresis_results:
+                h_load = hpt.get("load", 0.0)
+                h_diff = abs(hpt.get("hysteresis", 0.0))
+
+                try:
+                    h_mult, h_mpe, h_desc = get_mpe_for_load(
+                        h_load, e_val, acc_class, self.config, service_type
+                    )
+                except ValueError:
+                    # If load is out of range, skip hysteresis check for this point
+                    continue
+
+                h_passed = h_diff <= (h_mpe + 1e-9)
+                if not h_passed:
+                    hys_all_passed = False
+                    hys_failed += 1
+                h_ratio = h_diff / h_mpe if h_mpe > 0 else 0.0
+                if h_ratio > max_hys_ratio:
+                    max_hys_ratio = h_ratio
+
+                hys_sub.append({
+                    "load": h_load,
+                    "increasing_indication": hpt.get("increasing_indication"),
+                    "decreasing_indication": hpt.get("decreasing_indication"),
+                    "hysteresis": h_diff,
+                    "mpe_mass": h_mpe,
+                    "mpe_in_e": h_mult,
+                    "passed": h_passed,
+                    "criterion": h_desc,
+                })
+
+            if hys_sub:
+                hys_outcome = EvaluationOutcome.PASS if hys_all_passed else EvaluationOutcome.FAIL
+                hys_expl = (
+                    f"Hysteresis at all {len(hys_sub)} common load point(s) is within |MPE(L)|."
+                    if hys_all_passed
+                    else f"Hysteresis exceeded |MPE(L)| at {hys_failed} of {len(hys_sub)} common load point(s)."
+                )
+                max_hys_val = calc_result.get("max_hysteresis") or 0.0
+                evaluations.append(
+                    RuleItemEvaluation(
+                        rule_id="OIML-R76-1-LIN-HYS",
+                        rule_name="Hysteresis Limit Between Increasing and Decreasing Loads",
+                        source_reference="OIML R-76-1:2006 Clause 3.5.1 ¶2",
+                        rule_version=self.rule_version,
+                        verification_status=RuleVerificationStatus.VERIFIED,
+                        outcome=hys_outcome,
+                        applicable_criterion=f"|I_inc − I_dec| ≤ |MPE(L)| at each common load ({acc_class})",
+                        observed_value=f"Max hysteresis = {max_hys_val:.4f} {unit} ({max_hys_ratio * 100:.1f}% of MPE)",
+                        tolerance_limit=f"Dynamic |MPE(L)| (0.5e to 1.5e depending on load bracket)",
+                        explanation=hys_expl,
+                        details=hys_sub,
+                    )
+                )
+
+        return evaluations
 
     def _evaluate_repeatability(
         self,

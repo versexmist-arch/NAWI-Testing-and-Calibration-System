@@ -40,7 +40,16 @@ def calculate_linearity(
     clean_unit = normalize_unit_str(unit)
     e_dec = sanitize_number(instrument_e) if instrument_e else None
 
-    # Step 1: Detect zero-load error (E0) if any observation has load == 0
+    # Step 1: Detect zero-load error (E0) if any observation has load == 0.
+    #
+    # E0 is the indication error at zero load: E0 = I(0) - 0 = I(0).
+    # Per OIML R-76-1:2006 Clause 3.5.1, the corrected error is defined as:
+    #   Ec(L) = E(L) - E(0)
+    # This means Ec at the zero-load point itself is always 0 by definition:
+    #   Ec(0) = E(0) - E(0) = 0
+    # This is mathematically correct — the zero point is the reference.
+    # It is NOT a calculation error that the zero-load point shows Ec = 0;
+    # the zero-load error E(0) is separately reported as 'zero_load_error'.
     zero_error = Decimal("0")
     for obs in observations:
         load_val = sanitize_number(obs.get("load"))

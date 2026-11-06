@@ -22,6 +22,9 @@ from .api.audit import router as audit_router
 from .api.rules import router as rules_router
 from .api.dashboard import router as dashboard_router
 from .api.demo import router as demo_router
+from .api.users import router as users_router
+from .api.lab_settings import router as lab_settings_router
+from .api.analytics import router as analytics_router
 
 
 @asynccontextmanager
@@ -64,6 +67,9 @@ app.include_router(audit_router, prefix=settings.API_V1_STR)
 app.include_router(rules_router, prefix=settings.API_V1_STR)
 app.include_router(dashboard_router, prefix=settings.API_V1_STR)
 app.include_router(demo_router, prefix=settings.API_V1_STR)
+app.include_router(users_router, prefix=settings.API_V1_STR)
+app.include_router(lab_settings_router, prefix=settings.API_V1_STR)
+app.include_router(analytics_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
