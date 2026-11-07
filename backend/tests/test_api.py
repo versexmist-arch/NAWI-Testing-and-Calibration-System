@@ -212,3 +212,69 @@ def test_analytics_endpoint(client):
     assert "summary" in data
     assert "category_distribution" in data
     assert "monthly_trend" in data
+
+
+def test_linearity_over_capacity_rejected(client):
+    """
+    BUG-4 regression test: An observation load exceeding the instrument's rated
+    max_capacity must be rejected by the calculation endpoint with HTTP 422.
+    This guards against silently accepting physically impossible observations.
+    """
+    # Create a Class III instrument with max_capacity=100 g
+    serial = f"SN-BUG4-{uuid.uuid4().hex[:6].upper()}"
+    inst_res = client.post("/api/instruments", json={
+        "serial_number": serial,
+        "manufacturer": "BUG4 Test Lab",
+        "model": "MinScale-100",
+        "instrument_type": "Platform Scale",
+        "accuracy_class": "Class III",
+        "max_capacity": 100.0,
+        "min_capacity": 0.0,
+        "verification_scale_interval": 0.1,
+        "actual_scale_interval": 0.1,
+        "unit": "g",
+        "location": "Test Bay",
+        "notes": "BUG-4 capacity regression test instrument",
+    })
+    assert inst_res.status_code == 201
+    inst_id = inst_res.json()["id"]
+
+    # Create linearity session
+    sess_res = client.post("/api/tests", json={
+        "instrument_id": inst_id,
+        "test_category": "linearity",
+        "operator_name": "BUG4 Tester",
+        "laboratory_location": "Bay A",
+        "ambient_temperature": 23.0,
+        "relative_humidity": 50.0,
+        "service_type": "initial",
+        "test_configuration": {},
+    })
+    assert sess_res.status_code == 201
+    sess_id = sess_res.json()["id"]
+
+    # Submit observations — load=101 g exceeds max_capacity=100 g
+    obs_payload = {
+        "observations": [
+            {"load": 0,   "indication": 0.0,   "direction": "increasing"},
+            {"load": 50,  "indication": 50.0,  "direction": "increasing"},
+            {"load": 101, "indication": 101.0, "direction": "increasing"},   # over capacity
+        ]
+    }
+    obs_res = client.post(f"/api/tests/{sess_id}/observations", json=obs_payload)
+    # Observations may be accepted at this stage (schema-valid); rejection must
+    # occur at calculation time.
+    assert obs_res.status_code in (200, 201, 422)
+
+    if obs_res.status_code != 422:
+        # Trigger calculation — must be rejected
+        calc_res = client.post(f"/api/tests/{sess_id}/calculate")
+        assert calc_res.status_code == 422, (
+            f"BUG-4: Over-capacity load 101 g on 100 g instrument was NOT rejected. "
+            f"Got HTTP {calc_res.status_code}: {calc_res.text}"
+        )
+        # Verify error message mentions capacity
+        detail = calc_res.json().get("detail", "")
+        assert any(word in detail.lower() for word in ["capacity", "maximum", "exceed"]), (
+            f"BUG-4: 422 response does not mention capacity. Detail: {detail}"
+        )

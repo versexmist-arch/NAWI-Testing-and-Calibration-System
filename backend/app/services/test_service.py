@@ -41,6 +41,27 @@ def calculate_test_session(db: Session, test_session_id: str) -> Dict[str, Any]:
     e_val = instrument.verification_scale_interval
 
     try:
+        # BUG-4 FIX: Validate that no observation load exceeds the instrument's
+        # rated maximum capacity before invoking any calculation engine.
+        # An over-capacity load is physically impossible for the instrument and
+        # must be rejected with HTTP 422 regardless of whether an MPE bracket
+        # mathematically exists for that load.
+        max_cap = instrument.max_capacity
+        over_cap = [
+            obs for obs in obs_list
+            if float(obs.get("load", 0)) > max_cap + 1e-9
+        ]
+        if over_cap:
+            worst = max(float(o["load"]) for o in over_cap)
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Observation load {worst} {unit} exceeds the instrument's rated "
+                    f"maximum capacity of {max_cap} {unit}. Remove or correct the "
+                    f"over-capacity observation before submitting for calculation."
+                ),
+            )
+
         if category == "eccentricity":
             test_load = config.get("test_load")
             if not test_load:
