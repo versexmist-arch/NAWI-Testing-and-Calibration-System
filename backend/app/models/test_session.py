@@ -5,6 +5,25 @@ from sqlalchemy.orm import relationship
 from ..database import Base
 
 
+class TestRevision(Base):
+    __tablename__ = "test_revisions"
+
+    id = Column(String(50), primary_key=True, default=lambda: f"REV-{uuid.uuid4().hex[:8].upper()}")
+    test_session_id = Column(String(50), ForeignKey("test_sessions.id"), nullable=False, index=True)
+    revision_number = Column(Integer, nullable=False)
+    amendment_reason = Column(String(500), nullable=False)
+    amended_by = Column(String(100), nullable=False)
+    status_at_amendment = Column(String(50), nullable=False)
+    observations_snapshot = Column(JSON, nullable=True)
+    calculation_snapshot = Column(JSON, nullable=True)
+    rule_evaluation_snapshot = Column(JSON, nullable=True)
+    overall_outcome = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    test_session = relationship("TestSession", back_populates="revisions")
+
+
 class TestSession(Base):
     __tablename__ = "test_sessions"
 
@@ -31,4 +50,4 @@ class TestSession(Base):
     rule_evaluation = relationship("RuleEvaluation", back_populates="test_session", uselist=False, cascade="all, delete-orphan")
     reports = relationship("GeneratedReport", back_populates="test_session", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="test_session", cascade="all, delete-orphan")
-
+    revisions = relationship("TestRevision", back_populates="test_session", order_by="TestRevision.revision_number.desc()", cascade="all, delete-orphan")

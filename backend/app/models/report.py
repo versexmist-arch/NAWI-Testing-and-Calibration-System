@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from ..database import Base
 
@@ -11,6 +11,9 @@ class GeneratedReport(Base):
     id = Column(String(50), primary_key=True, default=lambda: f"REP-{uuid.uuid4().hex[:8].upper()}")
     test_session_id = Column(String(50), ForeignKey("test_sessions.id"), nullable=False, index=True)
     instrument_id = Column(String(50), ForeignKey("instruments.id"), nullable=False, index=True)
+    version = Column(Integer, default=1, nullable=False)
+    is_superseded = Column(Boolean, default=False, nullable=False)
+    superseded_by = Column(String(50), nullable=True)
     file_path = Column(String(300), nullable=False)
     file_name = Column(String(150), nullable=False)
     generated_by = Column(String(100), default="Lead Metrologist")
@@ -20,4 +23,3 @@ class GeneratedReport(Base):
     # Relationships
     test_session = relationship("TestSession", back_populates="reports")
     instrument = relationship("Instrument")
-

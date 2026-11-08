@@ -10,7 +10,7 @@ if ROOT_PATH not in sys.path:
     sys.path.insert(0, ROOT_PATH)
 
 from .config import settings
-from .database import engine, Base, SessionLocal
+from .database import engine, Base, SessionLocal, ensure_schema_compatibility
 from .models import *  # Ensure all models are registered
 from .services.demo_data_service import seed_demo_data
 
@@ -23,6 +23,7 @@ from .api.rules import router as rules_router
 from .api.dashboard import router as dashboard_router
 from .api.demo import router as demo_router
 from .api.users import router as users_router
+from .api.auth import router as auth_router
 from .api.lab_settings import router as lab_settings_router
 from .api.analytics import router as analytics_router
 
@@ -31,6 +32,7 @@ from .api.analytics import router as analytics_router
 async def lifespan(app: FastAPI):
     # Startup: create tables and seed demonstration records if database is empty
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compatibility(engine)
     db = SessionLocal()
     try:
         seed_demo_data(db)
@@ -68,6 +70,7 @@ app.include_router(rules_router, prefix=settings.API_V1_STR)
 app.include_router(dashboard_router, prefix=settings.API_V1_STR)
 app.include_router(demo_router, prefix=settings.API_V1_STR)
 app.include_router(users_router, prefix=settings.API_V1_STR)
+app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(lab_settings_router, prefix=settings.API_V1_STR)
 app.include_router(analytics_router, prefix=settings.API_V1_STR)
 

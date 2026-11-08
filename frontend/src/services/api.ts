@@ -11,6 +11,33 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Attach authenticated operator token/user_id from localStorage to every outgoing request
+api.interceptors.request.use(config => {
+  try {
+    const raw = localStorage.getItem('nawi_active_user');
+    if (raw) {
+      const user = JSON.parse(raw);
+      if (user && user.id) {
+        config.headers['X-User-Id'] = user.id;
+        config.headers['Authorization'] = `Bearer ${user.id}`;
+      }
+    }
+  } catch {
+    // Ignore JSON parse errors
+  }
+  return config;
+});
+
+// --- Authentication & RBAC ---
+export const getCurrentUserContext = () =>
+  api.get('/auth/me').then(r => r.data);
+
+export const loginAsUser = (username_or_id: string) =>
+  api.post('/auth/login', { username_or_id }).then(r => r.data);
+
+export const listAvailableRoles = (): Promise<User[]> =>
+  api.get<User[]>('/auth/available-roles').then(r => r.data);
+
 // --- Health ---
 export const checkHealth = () => api.get('/health');
 
@@ -88,9 +115,23 @@ export const generateReport = (testId: string) =>
 export const getTestAuditLogs = (testId: string): Promise<AuditLog[]> =>
   api.get<AuditLog[]>(`/tests/${testId}/audit`).then(r => r.data);
 
+export const amendTestSession = (testId: string, data: {
+  reason: string;
+  operator_name: string;
+  observations?: unknown[];
+  test_configuration?: Record<string, unknown>;
+}) => api.post(`/tests/${testId}/amend`, data).then(r => r.data);
+
+export const getTestRevisions = (testId: string) =>
+  api.get(`/tests/${testId}/revisions`).then(r => r.data);
+
 // --- Reports ---
-export const listReports = (instrument_id?: string): Promise<GeneratedReport[]> =>
-  api.get<GeneratedReport[]>('/reports', { params: instrument_id ? { instrument_id } : undefined }).then(r => r.data);
+export const listReports = (params?: {
+  instrument_id?: string;
+  test_session_id?: string;
+  include_superseded?: boolean;
+}): Promise<GeneratedReport[]> =>
+  api.get<GeneratedReport[]>('/reports', { params }).then(r => r.data);
 
 export const getReport = (id: string): Promise<GeneratedReport> =>
   api.get<GeneratedReport>(`/reports/${id}`).then(r => r.data);

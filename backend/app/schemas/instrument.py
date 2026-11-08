@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class InstrumentBase(BaseModel):
@@ -9,13 +9,20 @@ class InstrumentBase(BaseModel):
     model: str = Field(..., min_length=1, max_length=100)
     instrument_type: str = Field(default="Bench Scale")
     accuracy_class: str = Field(default="Class III")
-    max_capacity: float = Field(..., gt=0)
-    min_capacity: Optional[float] = Field(default=None, ge=0)
-    verification_scale_interval: float = Field(..., gt=0, description="Verification scale interval e")
-    actual_scale_interval: Optional[float] = Field(default=None, gt=0, description="Actual scale interval d")
+    max_capacity: float = Field(..., gt=0, description="Rated maximum capacity (must be strictly > 0)")
+    min_capacity: Optional[float] = Field(default=None, ge=0, description="Minimum capacity (must be >= 0)")
+    verification_scale_interval: float = Field(..., gt=0, description="Verification scale interval e (must be strictly > 0)")
+    actual_scale_interval: Optional[float] = Field(default=None, gt=0, description="Actual scale interval d (must be strictly > 0)")
     unit: str = Field(default="g")
     location: Optional[str] = Field(default="Metrology Laboratory")
     notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_capacities(self):
+        if self.min_capacity is not None and self.max_capacity is not None:
+            if self.min_capacity >= self.max_capacity:
+                raise ValueError("Minimum capacity must be strictly less than maximum capacity.")
+        return self
 
 
 class InstrumentCreate(InstrumentBase):
@@ -28,14 +35,21 @@ class InstrumentUpdate(BaseModel):
     model: Optional[str] = None
     instrument_type: Optional[str] = None
     accuracy_class: Optional[str] = None
-    max_capacity: Optional[float] = None
-    min_capacity: Optional[float] = None
-    verification_scale_interval: Optional[float] = None
-    actual_scale_interval: Optional[float] = None
+    max_capacity: Optional[float] = Field(default=None, gt=0, description="Rated maximum capacity (must be strictly > 0)")
+    min_capacity: Optional[float] = Field(default=None, ge=0, description="Minimum capacity (must be >= 0)")
+    verification_scale_interval: Optional[float] = Field(default=None, gt=0, description="Verification scale interval e (must be strictly > 0)")
+    actual_scale_interval: Optional[float] = Field(default=None, gt=0, description="Actual scale interval d (must be strictly > 0)")
     unit: Optional[str] = None
     location: Optional[str] = None
     notes: Optional[str] = None
     is_archived: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def validate_capacities(self):
+        if self.min_capacity is not None and self.max_capacity is not None:
+            if self.min_capacity >= self.max_capacity:
+                raise ValueError("Minimum capacity must be strictly less than maximum capacity.")
+        return self
 
 
 class InstrumentResponse(InstrumentBase):

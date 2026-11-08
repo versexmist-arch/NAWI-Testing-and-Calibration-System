@@ -5,6 +5,7 @@ from ..database import get_db
 from ..models.user import User
 from ..schemas.user import UserCreate, UserUpdate, UserResponse
 from ..services.audit_service import record_audit_event
+from ..auth import get_current_user, normalize_role, MANAGEMENT_PERMITTED_ROLES
 
 router = APIRouter(prefix="/users", tags=["Users & Operators"])
 
@@ -30,7 +31,19 @@ def list_users(
 
 
 @router.post("", response_model=UserResponse, status_code=201)
-def create_user(payload: UserCreate, db: Session = Depends(get_db)):
+def create_user(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user_role_canonical = normalize_role(current_user.role)
+    allowed_canonical = {normalize_role(r) for r in MANAGEMENT_PERMITTED_ROLES}
+    if user_role_canonical not in allowed_canonical:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Permission Denied: User '{current_user.full_name}' with role '{current_user.role}' cannot register new laboratory operators."
+        )
+
     # Check duplicate username
     if db.query(User).filter(User.username == payload.username.strip()).first():
         raise HTTPException(status_code=409, detail=f"Username '{payload.username}' is already in use.")
@@ -54,8 +67,8 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     record_audit_event(
         db=db,
         action="USER_CREATED",
-        actor="Administrator",
-        details={"username": user.username, "role": user.role}
+        actor=current_user.full_name,
+        details={"username": user.username, "role": user.role, "created_by": current_user.full_name}
     )
     return user
 
@@ -69,7 +82,20 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{user_id}", response_model=UserResponse)
-def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)):
+def update_user(
+    user_id: str,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user_role_canonical = normalize_role(current_user.role)
+    allowed_canonical = {normalize_role(r) for r in MANAGEMENT_PERMITTED_ROLES}
+    if user_role_canonical not in allowed_canonical:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Permission Denied: User '{current_user.full_name}' with role '{current_user.role}' cannot modify personnel profiles."
+        )
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
@@ -84,14 +110,26 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     record_audit_event(
         db=db,
         action="USER_UPDATED",
-        actor="Administrator",
+        actor=current_user.full_name,
         details={"user_id": user.id, "changes": update_dict}
     )
     return user
 
 
 @router.delete("/{user_id}")
-def delete_user(user_id: str, db: Session = Depends(get_db)):
+def delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user_role_canonical = normalize_role(current_user.role)
+    allowed_canonical = {normalize_role(r) for r in MANAGEMENT_PERMITTED_ROLES}
+    if user_role_canonical not in allowed_canonical:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Permission Denied: User '{current_user.full_name}' with role '{current_user.role}' cannot deactivate personnel profiles."
+        )
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")

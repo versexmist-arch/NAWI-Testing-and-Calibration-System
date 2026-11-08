@@ -1,5 +1,5 @@
 from .instrument import Instrument
-from .test_session import TestSession
+from .test_session import TestSession, TestRevision
 from .observation import Observation
 from .calculation import CalculationResult, RuleEvaluation
 from .report import GeneratedReport
@@ -10,6 +10,7 @@ from .lab_settings import LaboratorySettings
 __all__ = [
     "Instrument",
     "TestSession",
+    "TestRevision",
     "Observation",
     "CalculationResult",
     "RuleEvaluation",
@@ -18,4 +19,3 @@ __all__ = [
     "User",
     "LaboratorySettings",
 ]
-

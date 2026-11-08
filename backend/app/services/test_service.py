@@ -17,11 +17,21 @@ from ..models import TestSession, Observation, CalculationResult, RuleEvaluation
 from .audit_service import record_audit_event
 
 
-def calculate_test_session(db: Session, test_session_id: str) -> Dict[str, Any]:
+def calculate_test_session(db: Session, test_session_id: str, allow_amendment: bool = False) -> Dict[str, Any]:
     """Execute metrological calculations for the session's recorded observations."""
     session = db.query(TestSession).filter(TestSession.id == test_session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Test session not found.")
+
+    # BUG-6 GUARD: Prevent silent in-place recalculation of completed sessions
+    if session.status == "Completed" and not allow_amendment:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Cannot recalculate a completed test session. Session is locked. "
+                "Use the amendment workflow (POST /api/tests/{test_id}/amend) with an authorized reason."
+            )
+        )
 
     obs_record = db.query(Observation).filter(Observation.test_session_id == test_session_id).first()
     if not obs_record or not obs_record.data:

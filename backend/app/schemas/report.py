@@ -8,6 +8,9 @@ class GeneratedReportResponse(BaseModel):
     id: str
     test_session_id: str
     instrument_id: str
+    version: int = 1
+    is_superseded: bool = False
+    superseded_by: Optional[str] = None
     file_name: str
     generated_by: str
     report_type: str

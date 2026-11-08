@@ -1,8 +1,8 @@
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
@@ -20,7 +20,15 @@ from reportlab.platypus import (
 )
 
 from ..config import settings
-from ..models import TestSession, GeneratedReport, Observation, CalculationResult, RuleEvaluation, LaboratorySettings
+from ..models import (
+    TestSession,
+    TestRevision,
+    GeneratedReport,
+    Observation,
+    CalculationResult,
+    RuleEvaluation,
+    LaboratorySettings,
+)
 from .audit_service import record_audit_event
 
 
@@ -44,9 +52,10 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
             detail="Cannot generate report: test session must be calculated and evaluated first."
         )
 
-    # Unique Report ID
+    # Unique Report ID and Revision Tracking (BUG-8)
     report_id = f"REP-{uuid.uuid4().hex[:8].upper()}"
-    filename = f"{report_id}_{session.test_category.lower()}_{instrument.serial_number}.pdf"
+    report_version = session.version or 1
+    filename = f"{report_id}_v{report_version}_{session.test_category.lower()}_{instrument.serial_number}.pdf"
     os.makedirs(settings.REPORTS_DIR, exist_ok=True)
     file_path = os.path.join(settings.REPORTS_DIR, filename)
 
@@ -67,34 +76,34 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
         'DocTitle',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=16,
-        leading=20,
-        textColor=colors.HexColor('#0b1329'),
+        fontSize=15,
+        leading=18,
+        textColor=colors.HexColor('#0f172a'),
     )
     subtitle_style = ParagraphStyle(
         'DocSubTitle',
         parent=styles['Normal'],
         fontName='Helvetica',
-        fontSize=9,
-        leading=12,
+        fontSize=8.5,
+        leading=11,
         textColor=colors.HexColor('#475569'),
     )
     h2_style = ParagraphStyle(
         'Heading2',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=11,
-        leading=14,
+        fontSize=10.5,
+        leading=13,
         textColor=colors.HexColor('#1e3a8a'),
-        spaceBefore=8,
-        spaceAfter=4,
+        spaceBefore=7,
+        spaceAfter=3,
     )
     body_style = ParagraphStyle(
         'Body',
         parent=styles['Normal'],
         fontName='Helvetica',
-        fontSize=8.5,
-        leading=11,
+        fontSize=8,
+        leading=10.5,
         textColor=colors.HexColor('#1e293b'),
     )
     bold_body = ParagraphStyle(
@@ -129,14 +138,16 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
     story = []
 
     # 1. Header Banner
+    now_utc = datetime.now(timezone.utc)
+    rev_label = f"Rev {report_version} (AMENDED)" if report_version > 1 else f"Rev {report_version} (ORIGINAL)"
     header_data = [
         [
             Paragraph(f"<b>{lab_name.upper()}</b>", title_style),
-            Paragraph(f"<b>REPORT ID:</b> {report_id}<br/><b>DATE:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", subtitle_style)
+            Paragraph(f"<b>REPORT ID:</b> {report_id}<br/><b>REPORT VERSION:</b> {rev_label}<br/><b>DATE:</b> {now_utc.strftime('%Y-%m-%d %H:%M UTC')}", subtitle_style)
         ],
         [
             Paragraph(f"{org_name}<br/><b>Accreditation:</b> {accred_no}", subtitle_style),
-            Paragraph(f"<b>TEST SESSION:</b> {session.id}<br/><b>STATUS:</b> {session.status}", subtitle_style)
+            Paragraph(f"<b>TEST SESSION:</b> {session.id} (v{report_version})<br/><b>STATUS:</b> {session.status}", subtitle_style)
         ]
     ]
     header_table = Table(header_data, colWidths=[360, 180])
@@ -147,9 +158,35 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
     ]))
     story.append(header_table)
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1e3a8a'), spaceAfter=8))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1e3a8a'), spaceAfter=7))
 
-    # 2. Instrument & Session Specifications Table
+    # Amendment Notice (if amended report)
+    if report_version > 1:
+        last_rev = db.query(TestRevision).filter(TestRevision.test_session_id == session.id).order_by(TestRevision.revision_number.desc()).first()
+        if last_rev:
+            amend_time_str = last_rev.created_at.strftime('%Y-%m-%d %H:%M UTC') if hasattr(last_rev.created_at, 'strftime') else str(last_rev.created_at)
+            amend_box = [
+                [Paragraph("<b>OFFICIAL AMENDMENT / REVISION RECORD:</b>", bold_body)],
+                [Paragraph(
+                    f"This calibration report represents <b>Revision {report_version}</b> and formally supersedes previous certificate revisions. "
+                    f"<br/><b>Amendment Justification:</b> {last_rev.amendment_reason}"
+                    f"<br/><b>Authorized Metrologist:</b> {last_rev.amended_by} (Recorded: {amend_time_str})",
+                    body_style
+                )]
+            ]
+            amend_table = Table(amend_box, colWidths=[540])
+            amend_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fef3c7')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#d97706')),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(amend_table)
+            story.append(Spacer(1, 6))
+
+    # 2. Instrument & Environmental Specifications Table
     story.append(Paragraph("1. INSTRUMENT & ENVIRONMENTAL SPECIFICATIONS", h2_style))
     spec_data = [
         [
@@ -232,6 +269,7 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
         ecc_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#94a3b8')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ffffff'), colors.HexColor('#f8fafc')]),
             ('TOPPADDING', (0, 0), (-1, -1), 3),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
             ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
@@ -265,6 +303,7 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
         lin_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#94a3b8')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ffffff'), colors.HexColor('#f8fafc')]),
             ('TOPPADDING', (0, 0), (-1, -1), 2.5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
             ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
@@ -293,6 +332,7 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
         rep_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#94a3b8')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ffffff'), colors.HexColor('#f8fafc')]),
             ('TOPPADDING', (0, 0), (-1, -1), 2.5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -381,7 +421,7 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
     # 7. Regulatory Disclaimer & Sign-Off Section
     disclaimer_text = f"<b>METROLOGICAL DISCLAIMER & LIMITATIONS:</b> {lab.report_disclaimer if lab and lab.report_disclaimer else 'This evaluation report is generated by the VisionVerity SIH 2026 NAWI Calibration Support prototype. It provides structured calculation, traceable observations, and rule-based checking against configured OIML R-76 recommendations. It does not replace an authorized verification certificate issued by an accredited legal metrology authority.'}"
     story.append(Paragraph(disclaimer_text, subtitle_style))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     # Sign-off Box
     signoff_data = [
@@ -395,7 +435,7 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
             Paragraph("<b>Signature:</b>", bold_body),
             Paragraph("____________________________", body_style),
             Paragraph("<b>Date of Review:</b>", bold_body),
-            Paragraph(datetime.utcnow().strftime('%Y-%m-%d'), body_style),
+            Paragraph(now_utc.strftime('%Y-%m-%d'), body_style),
         ]
     ]
     signoff_table = Table(signoff_data, colWidths=[135, 135, 140, 130])
@@ -409,11 +449,23 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
     # Build document
     doc.build(story)
 
-    # Save to database
+    # Mark any previously active reports for this session as superseded (BUG-8)
+    prior_reports = db.query(GeneratedReport).filter(
+        GeneratedReport.test_session_id == test_session_id,
+        GeneratedReport.superseded_by == None
+    ).all()
+    for pr in prior_reports:
+        pr.is_superseded = True
+        pr.superseded_by = report_id
+
+    # Save new report to database
     report_record = GeneratedReport(
         id=report_id,
         test_session_id=test_session_id,
         instrument_id=instrument.id,
+        version=report_version,
+        is_superseded=False,
+        superseded_by=None,
         file_path=file_path,
         file_name=filename,
         generated_by=session.operator_name or operator_name,
@@ -426,16 +478,15 @@ def generate_pdf_report(db: Session, test_session_id: str, operator_name: str = 
     record_audit_event(
         db=db,
         action="REPORT_GENERATED",
-        actor=operator_name,
-        test_session_id=session.id,
+        actor=session.operator_name or operator_name,
+        test_session_id=test_session_id,
         instrument_id=instrument.id,
         details={
             "report_id": report_id,
-            "filename": filename,
-            "category": session.test_category,
-            "outcome": overall_outcome,
+            "file_name": filename,
+            "version": report_version,
+            "superseded_reports_count": len(prior_reports),
         }
     )
 
     return report_record
-

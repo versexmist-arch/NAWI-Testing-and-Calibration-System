@@ -5,6 +5,8 @@ from ..database import get_db
 from ..models import Instrument, TestSession
 from ..schemas.instrument import InstrumentCreate, InstrumentUpdate, InstrumentResponse
 from ..services.audit_service import record_audit_event
+from ..auth import get_current_user, normalize_role, MANAGEMENT_PERMITTED_ROLES
+from ..models.user import User
 from calculation_engine.common.units import calculate_scale_intervals
 
 router = APIRouter(prefix="/instruments", tags=["Instruments"])
@@ -167,7 +169,23 @@ def update_instrument(instrument_id: str, payload: InstrumentUpdate, db: Session
 
 
 @router.delete("/{instrument_id}")
-def archive_instrument(instrument_id: str, db: Session = Depends(get_db)):
+def archive_instrument(
+    instrument_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Verify RBAC permissions: only Admin / Lab Manager can archive instruments
+    user_role_canonical = normalize_role(current_user.role)
+    allowed_canonical = {normalize_role(r) for r in MANAGEMENT_PERMITTED_ROLES}
+    if user_role_canonical not in allowed_canonical:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Permission Denied: User '{current_user.full_name}' with role '{current_user.role}' "
+                f"cannot archive instruments. Only Administrators and Laboratory Managers have this permission."
+            )
+        )
+
     instrument = db.query(Instrument).filter(Instrument.id == instrument_id).first()
     if not instrument:
         raise HTTPException(status_code=404, detail="Instrument not found.")
@@ -178,9 +196,9 @@ def archive_instrument(instrument_id: str, db: Session = Depends(get_db)):
     record_audit_event(
         db=db,
         action="INSTRUMENT_ARCHIVED",
-        actor="Operator",
+        actor=current_user.full_name,
         instrument_id=instrument.id,
-        details={"status": "archived"}
+        details={"status": "archived", "authorized_by": current_user.full_name, "role": current_user.role}
     )
 
     return {"status": "success", "message": f"Instrument {instrument.serial_number} archived."}

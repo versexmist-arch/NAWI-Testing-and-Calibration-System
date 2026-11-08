@@ -13,11 +13,17 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 @router.get("", response_model=List[GeneratedReportResponse])
 def list_reports(
     instrument_id: Optional[str] = None,
+    test_session_id: Optional[str] = None,
+    include_superseded: bool = True,
     db: Session = Depends(get_db)
 ):
     query = db.query(GeneratedReport)
     if instrument_id:
         query = query.filter(GeneratedReport.instrument_id == instrument_id)
+    if test_session_id:
+        query = query.filter(GeneratedReport.test_session_id == test_session_id)
+    if not include_superseded:
+        query = query.filter(GeneratedReport.is_superseded == False)
     return query.order_by(GeneratedReport.created_at.desc()).all()
 
 

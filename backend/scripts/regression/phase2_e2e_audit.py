@@ -677,66 +677,61 @@ def test_wf9_04_analytics_endpoint(api):
 
 def test_inv_01_completed_session_can_be_modified(api, completed_lin_session):
     """
-    INV-01: Investigate — can a Completed session be modified?
-    Documents behaviour; a real LIMS should protect completed sessions.
+    INV-01 (BUG-5 VERIFICATION): Completed session must be protected against ordinary PUT.
+    Returns HTTP 409 Conflict.
     """
     sid, _ = completed_lin_session
-    r_before = api.get(f"/api/tests/{sid}")
-    status_before = r_before.json()["session"]["status"]
-
     r_update = api.put(f"/api/tests/{sid}", json={"operator_name": "TAMPERED NAME"})
     print(f"\n  INV-01: PUT on Completed session => HTTP {r_update.status_code}")
-
-    if r_update.status_code == 200:
-        r_after = api.get(f"/api/tests/{sid}")
-        new_name = r_after.json()["session"]["operator_name"]
-        print(f"  FINDING: Completed session IS modifiable. operator_name => '{new_name}'")
-    else:
-        print(f"  OK: Completed session modification rejected ({r_update.status_code})")
+    assert r_update.status_code == 409, f"Expected 409 Conflict on completed session PUT, got {r_update.status_code}"
+    print("  OK: Completed session modification rejected with HTTP 409 (BUG-5 fixed)")
 
 
 def test_inv_02_recalculate_completed_session(api, completed_lin_session):
     """
-    INV-02: Can a Completed session be recalculated? (overwrites existing result)
-    This is a data integrity concern in certified labs.
+    INV-02 (BUG-6 VERIFICATION): Recalculation on completed session without amendment
+    must be blocked with HTTP 409 Conflict.
     """
     sid, orig_data = completed_lin_session
     r = api.post(f"/api/tests/{sid}/calculate")
     print(f"\n  INV-02: Recalculate Completed session => HTTP {r.status_code}")
-    if r.status_code == 200:
-        print("  FINDING: Recalculation of Completed session allowed (overwrites result)")
-    else:
-        print(f"  OK: Recalculation blocked ({r.status_code})")
+    assert r.status_code == 409, f"Expected 409 Conflict on completed session recalculation, got {r.status_code}"
+    print("  OK: Silent recalculation blocked with HTTP 409 (BUG-6 fixed)")
 
 
 def test_inv_03_report_consistency_after_recalc(api, report_session, completed_lin_session):
     """
-    INV-03: If recalculation is allowed, do old reports remain consistent?
-    Reports should be immutable snapshots.
+    INV-03 (BUG-8 VERIFICATION): When an amendment occurs, the original PDF report
+    remains completely consistent on disk and is marked superseded in DB.
     """
     sid, rep_id = report_session
-    # Download the original report
+    # Download original report
     r_orig = api.get(f"/api/reports/{rep_id}/download")
+    assert r_orig.status_code == 200
     orig_size = len(r_orig.content)
 
-    # Force a recalculation with DIFFERENT observations (bad data)
-    api.post(f"/api/tests/{sid}/observations", json={"observations": [
-        {"load": 0,    "indication": 0.0,    "direction": "increasing"},
-        {"load": 500,  "indication": 505.0,  "direction": "increasing"},  # 5g error -> FAIL
-        {"load": 1000, "indication": 1005.0, "direction": "increasing"},
-    ]})
-    api.post(f"/api/tests/{sid}/calculate")
+    # Amend with new observations
+    amend_res = api.post(f"/api/tests/{sid}/amend", json={
+        "reason": "Re-calibration per standard laboratory calibration cycle.",
+        "operator_name": "Authorized Metrologist",
+        "observations": [
+            {"load": 0,    "indication": 0.0,    "direction": "increasing"},
+            {"load": 500,  "indication": 505.0,  "direction": "increasing"},
+            {"load": 1000, "indication": 1005.0, "direction": "increasing"},
+        ]
+    })
+    assert amend_res.status_code == 200
 
-    # Re-download the SAME report (old rep_id)
+    # Original report is still downloadable and byte-for-byte identical
     r_after = api.get(f"/api/reports/{rep_id}/download")
+    assert r_after.status_code == 200
     after_size = len(r_after.content)
+    assert orig_size == after_size, "Original report altered on disk after amendment"
 
-    print(f"\n  INV-03: Original report size={orig_size}, after recalc size={after_size}")
-    # PDF bytes should be identical (immutable snapshot)
-    if orig_size != after_size:
-        print("  FINDING: Existing PDF report size changed after recalculation!")
-    else:
-        print("  OK: PDF report content unchanged after recalculation")
+    # Verify Report 1 is marked superseded in DB
+    rep_info = api.get(f"/api/reports/{rep_id}").json()
+    assert rep_info["is_superseded"] is True
+    print(f"\n  INV-03: Original report byte-identical ({orig_size} bytes) and marked is_superseded=True (BUG-8 fixed)")
 
 
 def test_inv_04_session_listing_after_archive(api):

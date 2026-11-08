@@ -67,6 +67,7 @@ export interface TestSession {
   service_type: string;
   status: string;
   version: number;
+  revisions_count?: number;
   test_configuration?: Record<string, unknown>;
   is_demo: boolean;
   test_date: string;
@@ -200,11 +201,30 @@ export interface GeneratedReport {
   id: string;
   test_session_id: string;
   instrument_id: string;
+  version?: number;
+  is_superseded?: boolean;
+  superseded_by?: string;
   file_name: string;
   generated_by: string;
   report_type: string;
   created_at: string;
   instrument?: Instrument;
+}
+
+export interface TestRevision {
+  id: string;
+  revision_number: number;
+  amendment_reason: string;
+  amended_by: string;
+  status_at_amendment?: string;
+  overall_outcome?: string;
+  created_at: string;
+  has_observations?: boolean;
+  has_calculations?: boolean;
+  has_rule_evaluations?: boolean;
+  observations?: unknown[];
+  calculation_result?: unknown;
+  rule_evaluation?: unknown;
 }
 
 export interface AuditLog {
