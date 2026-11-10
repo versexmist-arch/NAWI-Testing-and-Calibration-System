@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, FileText, ExternalLink, Search, Calendar, ShieldCheck, History, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { PageHeader, SectionCard, LoadingOverlay, EmptyState, DemoBadge, Pagination, useToast } from '../components/ui';
-import { listReports } from '../services/api';
+import { listReports, getReportDownloadUrl } from '../services/api';
 import type { GeneratedReport } from '../types';
 
 export const Reports: React.FC = () => {
@@ -262,7 +262,7 @@ export const Reports: React.FC = () => {
                       <td className="table-cell text-right">
                         <div className="flex items-center justify-end gap-2">
                           <a
-                            href={`/api/reports/${r.id}/download`}
+                            href={getReportDownloadUrl(r.id)}
                             target="_blank"
                             rel="noreferrer"
                             className={`py-1 px-3 text-xs flex items-center gap-1.5 rounded-lg font-semibold transition-colors ${

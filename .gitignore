@@ -48,7 +48,14 @@ yarn-error.log*
 Thumbs.db
 .vscode/
 .idea/
+# Environment files & secrets
 .env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
 #local backups
 backups/
 

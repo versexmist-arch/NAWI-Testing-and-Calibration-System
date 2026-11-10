@@ -1,6 +1,8 @@
 import os
+import json
 from pathlib import Path
-from typing import List
+from typing import List, Any, Optional
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -21,8 +23,45 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:8000",
     ]
+    CORS_ORIGIN_REGEX: Optional[str] = r"^https:\/\/.*\.vercel\.app$"
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: Any) -> str:
+        """
+        Render, Supabase and Heroku often provide 'postgres://' connection URLs.
+        SQLAlchemy 2.0+ requires the explicit driver scheme 'postgresql://'.
+        """
+        if isinstance(v, str) and v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql://", 1)
+        return str(v)
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> List[str]:
+        """
+        Support comma-separated strings (e.g. 'https://app.vercel.app,http://localhost:5173'),
+        JSON strings (e.g. '["https://app.vercel.app"]'), or lists.
+        """
+        if isinstance(v, str):
+            val = v.strip()
+            if not val:
+                return []
+            if val.startswith("[") and val.endswith("]"):
+                try:
+                    return json.loads(val)
+                except Exception:
+                    pass
+            return [origin.strip() for origin in val.split(",") if origin.strip()]
+        elif isinstance(v, (list, set, tuple)):
+            return [str(origin).strip() for origin in v if str(origin).strip()]
+        return v
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
 
 settings = Settings()

@@ -51,16 +51,30 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins in development
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Production-ready CORS configuration using environment variables
+cors_origins = settings.CORS_ORIGINS or ["*"]
+if "*" in cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?:\/\/.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_origin_regex=settings.CORS_ORIGIN_REGEX,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-# Include routers
+# Root-level health check for cloud platform monitoring probes (Render, AWS, GCP, etc.)
+app.include_router(health_router)
+
+# Include API v1 routers
 app.include_router(health_router, prefix=settings.API_V1_STR)
 app.include_router(instruments_router, prefix=settings.API_V1_STR)
 app.include_router(tests_router, prefix=settings.API_V1_STR)

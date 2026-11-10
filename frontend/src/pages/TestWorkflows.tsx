@@ -7,7 +7,7 @@ import {
 } from '../components/ui';
 import {
   listInstruments, createTestSession, saveObservations,
-  runCalculations, generateReport, getTestSession,
+  runCalculations, generateReport, getTestSession, getReportDownloadUrl,
 } from '../services/api';
 import type { Instrument, CalculationResult, RuleEvaluationSummary } from '../types';
 import {
@@ -326,7 +326,7 @@ export const EccentricityTest: React.FC = () => {
               Generate PDF Report
             </button>
             {reportId && (
-              <a href={`/api/reports/${reportId}/download`} target="_blank" rel="noreferrer" className="btn-secondary">
+              <a href={getReportDownloadUrl(reportId)} target="_blank" rel="noreferrer" className="btn-secondary">
                 Download PDF
               </a>
             )}
@@ -594,7 +594,7 @@ export const LinearityTest: React.FC = () => {
               {loading ? <Spinner size="sm" /> : <FileText size={15} />}
               Generate PDF Report
             </button>
-            {reportId && <a href={`/api/reports/${reportId}/download`} target="_blank" rel="noreferrer" className="btn-secondary">Download PDF</a>}
+            {reportId && <a href={getReportDownloadUrl(reportId)} target="_blank" rel="noreferrer" className="btn-secondary">Download PDF</a>}
             {sessionId && <button onClick={() => navigate(`/tests/${sessionId}`)} className="btn-secondary">View Session <ChevronRight size={14} /></button>}
           </div>
         </>
@@ -819,7 +819,7 @@ export const RepeatabilityTest: React.FC = () => {
               {loading ? <Spinner size="sm" /> : <FileText size={15} />}
               Generate PDF Report
             </button>
-            {reportId && <a href={`/api/reports/${reportId}/download`} target="_blank" rel="noreferrer" className="btn-secondary">Download PDF</a>}
+            {reportId && <a href={getReportDownloadUrl(reportId)} target="_blank" rel="noreferrer" className="btn-secondary">Download PDF</a>}
             {sessionId && <button onClick={() => navigate(`/tests/${sessionId}`)} className="btn-secondary">View Session <ChevronRight size={14} /></button>}
           </div>
         </>

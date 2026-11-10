@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from ..config import settings
 from ..database import get_db
 from ..models import GeneratedReport, TestSession, Instrument
 from ..schemas.report import GeneratedReportResponse
@@ -41,11 +42,23 @@ def download_report(report_id: str, db: Session = Depends(get_db)):
     if not report:
         raise HTTPException(status_code=404, detail="Report not found.")
 
-    if not os.path.exists(report.file_path):
-        raise HTTPException(status_code=404, detail="PDF report file does not exist on disk.")
+    target_path = report.file_path
+    if not os.path.exists(target_path):
+        # Cloud/Cross-environment fallback: check if file is located in active REPORTS_DIR
+        candidate1 = os.path.join(settings.REPORTS_DIR, report.file_name)
+        candidate2 = os.path.join(settings.REPORTS_DIR, os.path.basename(report.file_path))
+        if os.path.exists(candidate1):
+            target_path = candidate1
+        elif os.path.exists(candidate2):
+            target_path = candidate2
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail="PDF report file does not exist on disk. Generate a new report from the test session."
+            )
 
     return FileResponse(
-        path=report.file_path,
+        path=target_path,
         filename=report.file_name,
         media_type="application/pdf",
     )

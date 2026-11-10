@@ -12,7 +12,7 @@ import {
 } from '../components/ui';
 import {
   getTestSession, generateReport, getTestAuditLogs,
-  amendTestSession, getTestRevisions, listUsers
+  amendTestSession, getTestRevisions, listUsers, getReportDownloadUrl
 } from '../services/api';
 import { RuleEvaluationPanel } from './TestWorkflows';
 import type {
@@ -218,7 +218,7 @@ export const TestDetail: React.FC = () => {
               </button>
             )}
             {reportId && (
-              <a href={`/api/reports/${reportId}/download`} target="_blank" rel="noreferrer" className="btn-secondary text-xs">
+              <a href={getReportDownloadUrl(reportId)} target="_blank" rel="noreferrer" className="btn-secondary text-xs">
                 <Download size={13} /> Download Latest PDF
               </a>
             )}
@@ -436,7 +436,7 @@ export const TestDetail: React.FC = () => {
 
                   <div className="flex items-center gap-2 self-end sm:self-auto">
                     <a
-                      href={`/api/reports/${rep.id}/download`}
+                      href={getReportDownloadUrl(rep.id)}
                       target="_blank"
                       rel="noreferrer"
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${

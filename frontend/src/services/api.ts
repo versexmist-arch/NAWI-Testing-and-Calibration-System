@@ -5,8 +5,16 @@ import type {
   User, LaboratorySettings, AnalyticsData
 } from '../types';
 
+// Environment-aware backend API URL configuration
+// In production (Vercel), VITE_API_URL can be set to e.g. "https://nawi-backend.onrender.com"
+// In local development, if VITE_API_URL is unset, default to "/api" which uses Vite dev proxy
+const envApiUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+export const API_BASE_URL = envApiUrl
+  ? (envApiUrl.endsWith('/api') ? envApiUrl : `${envApiUrl.replace(/\/+$/, '')}/api`)
+  : '/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -136,7 +144,7 @@ export const listReports = (params?: {
 export const getReport = (id: string): Promise<GeneratedReport> =>
   api.get<GeneratedReport>(`/reports/${id}`).then(r => r.data);
 
-export const getReportDownloadUrl = (id: string) => `/api/reports/${id}/download`;
+export const getReportDownloadUrl = (id: string) => `${API_BASE_URL}/reports/${id}/download`;
 
 // --- Audit ---
 export const listAuditLogs = (params?: {

@@ -1,15 +1,26 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import settings
 
-# If SQLite, ensure connect_args includes check_same_thread=False
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+db_url = settings.DATABASE_URL
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args=connect_args,
-    echo=False,
-)
+# PostgreSQL vs SQLite connection arguments and pool configurations
+if db_url.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+    engine = create_engine(
+        db_url,
+        connect_args=connect_args,
+        echo=False,
+    )
+else:
+    # PostgreSQL configuration with connection pooling and pre-ping to handle stale cloud connections
+    engine = create_engine(
+        db_url,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+        echo=False,
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -26,21 +37,24 @@ def get_db():
 
 def ensure_schema_compatibility(db_engine):
     """
-    Ensure newly introduced columns exist in SQLite database tables without
-    dropping, modifying, or compromising existing records or historical data.
+    Ensure newly introduced columns exist in tables across both SQLite and PostgreSQL
+    without dropping, modifying, or compromising existing records or historical data.
     """
     try:
-        with db_engine.connect() as conn:
-            cursor = conn.connection.cursor()
-            # 1. generated_reports: version, is_superseded, superseded_by
-            gr_cols = [c[1] for c in cursor.execute("PRAGMA table_info(generated_reports)").fetchall()]
-            if gr_cols:
-                if "version" not in gr_cols:
-                    cursor.execute("ALTER TABLE generated_reports ADD COLUMN version INTEGER DEFAULT 1")
-                if "is_superseded" not in gr_cols:
-                    cursor.execute("ALTER TABLE generated_reports ADD COLUMN is_superseded BOOLEAN DEFAULT 0")
-                if "superseded_by" not in gr_cols:
-                    cursor.execute("ALTER TABLE generated_reports ADD COLUMN superseded_by VARCHAR(50)")
-            conn.connection.commit()
+        inspector = inspect(db_engine)
+        tables = inspector.get_table_names()
+        if "generated_reports" in tables:
+            columns = [col["name"] for col in inspector.get_columns("generated_reports")]
+            with db_engine.begin() as conn:
+                is_sqlite = db_engine.dialect.name == "sqlite"
+                bool_default = "0" if is_sqlite else "FALSE"
+
+                if "version" not in columns:
+                    conn.execute(text("ALTER TABLE generated_reports ADD COLUMN version INTEGER DEFAULT 1"))
+                if "is_superseded" not in columns:
+                    conn.execute(text(f"ALTER TABLE generated_reports ADD COLUMN is_superseded BOOLEAN DEFAULT {bool_default}"))
+                if "superseded_by" not in columns:
+                    conn.execute(text("ALTER TABLE generated_reports ADD COLUMN superseded_by VARCHAR(50)"))
     except Exception:
+        # Pass safely if columns already exist or dialect restricts online DDL
         pass
