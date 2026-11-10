@@ -1,7 +1,7 @@
 import os
 import json
 from pathlib import Path
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = f"sqlite:///{ROOT_DIR / 'nawi_calibration.db'}"
     REPORTS_DIR: str = str(ROOT_DIR / "reports" / "generated")
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -36,26 +36,36 @@ class Settings(BaseSettings):
             return v.replace("postgres://", "postgresql://", 1)
         return str(v)
 
-    @field_validator("CORS_ORIGINS", mode="before")
+    @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> List[str]:
         """
-        Support comma-separated strings (e.g. 'https://app.vercel.app,http://localhost:5173'),
-        JSON strings (e.g. '["https://app.vercel.app"]'), or lists.
+        Parse and validate CORS_ORIGINS from:
+        - JSON-formatted list string (e.g. '["https://app.vercel.app"]' or '[]')
+        - Comma-separated string (e.g. 'https://app.vercel.app,http://localhost:5173')
+        - Native list/tuple of strings
+        Rejects invalid JSON objects, malformed JSON, and non-list structures.
         """
         if isinstance(v, str):
             val = v.strip()
-            if not val:
+            if not val or val == "[]":
                 return []
-            if val.startswith("[") and val.endswith("]"):
+            if val.startswith("{"):
+                raise ValueError("CORS_ORIGINS cannot be a JSON object; expected a JSON list or comma-separated origins.")
+            if val.startswith("["):
+                if not val.endswith("]"):
+                    raise ValueError("Invalid JSON in CORS_ORIGINS: unclosed bracket.")
                 try:
-                    return json.loads(val)
-                except Exception:
-                    pass
+                    loaded = json.loads(val)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON format for CORS_ORIGINS: {e}") from e
+                if not isinstance(loaded, list):
+                    raise ValueError("CORS_ORIGINS JSON must be a list of origin strings.")
+                return [str(origin).strip() for origin in loaded if str(origin).strip()]
             return [origin.strip() for origin in val.split(",") if origin.strip()]
         elif isinstance(v, (list, set, tuple)):
             return [str(origin).strip() for origin in v if str(origin).strip()]
-        return v
+        raise ValueError(f"Invalid CORS_ORIGINS configuration: {v}")
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from pydantic import ValidationError
 from backend.app.config import Settings
 from backend.app.database import Base, get_db, ensure_schema_compatibility
 from backend.app.main import app
@@ -87,24 +88,41 @@ def test_database_url_normalization():
 
 
 def test_cors_origins_env_parsing():
-    """CORS_ORIGINS must accept comma-separated strings, JSON arrays, and wildcards."""
-    # Comma-separated
-    s1 = Settings(CORS_ORIGINS="https://nawi.vercel.app,http://localhost:5173")
-    assert s1.CORS_ORIGINS == ["https://nawi.vercel.app", "http://localhost:5173"]
+    """CORS_ORIGINS must accept JSON arrays, comma-separated strings, and reject invalid configs."""
+    # 1. Empty JSON list (Render default)
+    s_empty = Settings(CORS_ORIGINS="[]")
+    assert s_empty.CORS_ORIGINS == []
 
-    # JSON array string
-    s2 = Settings(CORS_ORIGINS='["https://nawi.vercel.app"]')
-    assert s2.CORS_ORIGINS == ["https://nawi.vercel.app"]
+    # 2. Valid JSON list of origins
+    s_json = Settings(CORS_ORIGINS='["https://nawi-cal.vercel.app", "https://visionverity.org"]')
+    assert s_json.CORS_ORIGINS == ["https://nawi-cal.vercel.app", "https://visionverity.org"]
 
-    # Single wildcard
-    s3 = Settings(CORS_ORIGINS="*")
-    assert s3.CORS_ORIGINS == ["*"]
+    # 3. Comma-separated origins
+    s_csv = Settings(CORS_ORIGINS="https://nawi.vercel.app, http://localhost:5173")
+    assert s_csv.CORS_ORIGINS == ["https://nawi.vercel.app", "http://localhost:5173"]
+
+    # 4. Default local development origins preserved
+    s_default = Settings()
+    assert "http://localhost:5173" in s_default.CORS_ORIGINS
+
+    # 5. Invalid CORS configuration - JSON object must raise ValidationError
+    with pytest.raises(ValidationError):
+        Settings(CORS_ORIGINS='{"not": "a list"}')
+
+    # 6. Invalid CORS configuration - malformed JSON must raise ValidationError
+    with pytest.raises(ValidationError):
+        Settings(CORS_ORIGINS='["unclosed json string')
+
+    # 7. Invalid CORS configuration - invalid type (e.g. dict) must raise ValidationError
+    with pytest.raises(ValidationError):
+        Settings(CORS_ORIGINS={"a": 1})
 
 
 def test_cors_preflight_headers(deployment_test_client):
-    """OPTIONS preflight requests from Vercel origins must return valid CORS headers."""
+    """OPTIONS preflight requests from Vercel origins must return valid CORS headers, while unauthorized origins are rejected."""
     client, _, _ = deployment_test_client
 
+    # Authorized Vercel deployment origin
     headers = {
         "Origin": "https://nawi-calibration.vercel.app",
         "Access-Control-Request-Method": "POST",
@@ -112,7 +130,18 @@ def test_cors_preflight_headers(deployment_test_client):
     }
     res = client.options("/api/instruments", headers=headers)
     assert res.status_code == 200
-    assert "access-control-allow-origin" in res.headers
+    assert res.headers.get("access-control-allow-origin") == "https://nawi-calibration.vercel.app"
+    assert res.headers.get("access-control-allow-credentials") == "true"
+
+    # Unauthorized origin must not receive Access-Control-Allow-Origin
+    unauth_headers = {
+        "Origin": "https://unauthorized-malicious-domain.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "Content-Type, X-User-Id",
+    }
+    unauth_res = client.options("/api/instruments", headers=unauth_headers)
+    assert unauth_res.status_code == 400
+    assert "access-control-allow-origin" not in unauth_res.headers
 
 
 def test_pdf_report_path_fallback(deployment_test_client):

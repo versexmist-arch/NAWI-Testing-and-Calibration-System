@@ -51,25 +51,17 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Production-ready CORS configuration using environment variables
-cors_origins = settings.CORS_ORIGINS or ["*"]
-if "*" in cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origin_regex=r"^https?:\/\/.*",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_origin_regex=settings.CORS_ORIGIN_REGEX,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Production-ready CORS configuration: no wildcard CORS
+cors_origins = [o for o in (settings.CORS_ORIGINS or []) if o and o != "*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Root-level health check for cloud platform monitoring probes (Render, AWS, GCP, etc.)
 app.include_router(health_router)
