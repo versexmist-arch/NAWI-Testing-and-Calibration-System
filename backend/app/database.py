@@ -3,6 +3,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import settings
 
 db_url = settings.DATABASE_URL
+if isinstance(db_url, str):
+    if db_url.startswith("postgres://"):
+        db_url = "postgresql+psycopg2://" + db_url[len("postgres://"):]
+    elif db_url.startswith("postgresql+psycopg://"):
+        db_url = "postgresql+psycopg2://" + db_url[len("postgresql+psycopg://"):]
+    elif db_url.startswith("postgresql://"):
+        db_url = "postgresql+psycopg2://" + db_url[len("postgresql://"):]
 
 # PostgreSQL vs SQLite connection arguments and pool configurations
 if db_url.startswith("sqlite"):

@@ -73,18 +73,32 @@ def test_root_and_api_health_endpoints(deployment_test_client):
 
 
 def test_database_url_normalization():
-    """Render/Heroku 'postgres://' URLs must be normalized to 'postgresql://' for SQLAlchemy."""
-    # Test postgres scheme
-    s1 = Settings(DATABASE_URL="postgres://user:pass@ep-hostname.render.com/nawidb")
-    assert s1.DATABASE_URL.startswith("postgresql://")
+    """PostgreSQL URLs must be normalized to 'postgresql+psycopg2://' to bind the installed psycopg2 driver."""
+    # 1. Render/Heroku 'postgres://' scheme
+    s1 = Settings(DATABASE_URL="postgres://user:pass@ep-hostname.render.com:5432/nawidb")
+    assert s1.DATABASE_URL == "postgresql+psycopg2://user:pass@ep-hostname.render.com:5432/nawidb"
 
-    # Test postgresql scheme (remains intact)
-    s2 = Settings(DATABASE_URL="postgresql://user:pass@ep-hostname.render.com/nawidb")
-    assert s2.DATABASE_URL.startswith("postgresql://")
+    # 2. Generic 'postgresql://' scheme (which SQLAlchemy 2.0 otherwise defaults to missing 'psycopg')
+    s2 = Settings(DATABASE_URL="postgresql://user:pass@ep-hostname.render.com:5432/nawidb")
+    assert s2.DATABASE_URL == "postgresql+psycopg2://user:pass@ep-hostname.render.com:5432/nawidb"
 
-    # Test sqlite scheme (remains intact)
-    s3 = Settings(DATABASE_URL="sqlite:///./test.db")
-    assert s3.DATABASE_URL.startswith("sqlite:///")
+    # 3. Explicit 'postgresql+psycopg://' scheme
+    s3 = Settings(DATABASE_URL="postgresql+psycopg://user:pass@ep-hostname.render.com:5432/nawidb")
+    assert s3.DATABASE_URL == "postgresql+psycopg2://user:pass@ep-hostname.render.com:5432/nawidb"
+
+    # 4. Explicit 'postgresql+psycopg2://' scheme remains intact
+    s4 = Settings(DATABASE_URL="postgresql+psycopg2://user:pass@ep-hostname.render.com:5432/nawidb")
+    assert s4.DATABASE_URL == "postgresql+psycopg2://user:pass@ep-hostname.render.com:5432/nawidb"
+
+    # 5. SQLite local development scheme remains completely intact
+    s5 = Settings(DATABASE_URL="sqlite:///./test.db")
+    assert s5.DATABASE_URL == "sqlite:///./test.db"
+
+    # 6. Verify SQLAlchemy engine creation loads psycopg2 driver without ModuleNotFoundError
+    from sqlalchemy import create_engine
+    engine_psycopg2 = create_engine(s1.DATABASE_URL)
+    assert engine_psycopg2.dialect.name == "postgresql"
+    assert engine_psycopg2.dialect.driver == "psycopg2"
 
 
 def test_cors_origins_env_parsing():

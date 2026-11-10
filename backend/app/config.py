@@ -29,11 +29,23 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_database_url(cls, v: Any) -> str:
         """
-        Render, Supabase and Heroku often provide 'postgres://' connection URLs.
-        SQLAlchemy 2.0+ requires the explicit driver scheme 'postgresql://'.
+        Normalize database connection URLs:
+        - Render, Heroku and cloud PostgreSQL providers provide 'postgres://' or 'postgresql://'.
+        - SQLAlchemy 2.0 defaults 'postgresql://' to the psycopg (v3) driver, which causes
+          ModuleNotFoundError if only psycopg2-binary is installed.
+        - Normalizing to 'postgresql+psycopg2://' ensures SQLAlchemy deterministically
+          uses the installed psycopg2-binary driver.
+        - SQLite URLs (e.g. 'sqlite:///...') are preserved intact for local development.
         """
-        if isinstance(v, str) and v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql://", 1)
+        if isinstance(v, str):
+            val = v.strip()
+            if val.startswith("postgres://"):
+                return "postgresql+psycopg2://" + val[len("postgres://"):]
+            if val.startswith("postgresql+psycopg://"):
+                return "postgresql+psycopg2://" + val[len("postgresql+psycopg://"):]
+            if val.startswith("postgresql://"):
+                return "postgresql+psycopg2://" + val[len("postgresql://"):]
+            return val
         return str(v)
 
     @field_validator("CORS_ORIGINS", mode="after")
